@@ -40,10 +40,6 @@ Adafruit_MQTT_Client mqtt(&client, MQTT_SERV, MQTT_PORT, MQTT_CLID, MQTT_NAME, M
 Adafruit_MQTT_Publish sensorPub = Adafruit_MQTT_Publish(&mqtt, MQTT_NAME "/f/wifitime", MQTT_QOS_1);
 Adafruit_MQTT_Publish totTime = Adafruit_MQTT_Publish(&mqtt, MQTT_NAME "/f/tottime", MQTT_QOS_1);
 
-// io.adafruit.com SHA1 fingerprint
-// const char* fingerprint = "AD 4B 64 B3 67 40 B5 FC 0E 51 9B BD 25 E9 7F 88 B6 2A A3 5B";  //og
-const char* fingerprint = "77 00 54 2D DA E7 D8 03 27 31 23 99 EB 27 DB CB A5 4C 57 18";
-
 void gotoSleep(){
   // Sleep
   #ifdef DEBUG 
@@ -138,27 +134,6 @@ void checkWifiPresence(){               // used to check if wifi network exists 
   }
 }
 
-void verifyFingerprint() {
-
-  const char* host = MQTT_SERV;
-
-  Serial.print("Connecting to ");
-  Serial.println(host);
-
-  if (! client.connect(host, MQTT_PORT)) {
-    Serial.println("Connection failed. Halting execution.");
-    while(1);
-  }
-
-  if (client.verify(fingerprint, host)) {
-    Serial.println("Connection secure.");
-  } else {
-    Serial.println("Connection insecure! Halting execution.");
-    while(1);
-  }
-
-}
-
 void wifiConnect(){
   if(staticIP[netIndex]){
     WiFi.config(ip[netIndex], gateway[netIndex], subnet[netIndex], dns);  // Pull IP info from private.h
@@ -194,7 +169,6 @@ void setup() {
   checkWifiPresence();                        // Check if wifi is available before trying to connect
   wifiConnect();
 
-  verifyFingerprint();
   MQTT_connect();                             // attempt to connect to mqtt server
   // uint8_t value = random(255);                // replace me with sensor read
   valuePublish(timer);                        // send our sensor reading to mqtt
