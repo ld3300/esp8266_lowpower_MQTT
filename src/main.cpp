@@ -4,7 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <fs.h>             // recall status for wakeups
+#include <ESP8266Ping.h>
 #include "private.h"        // store wifi and mqtt credetials here. Add private.h to .gitignore
 
 #define SLEEPTIME 600000     // millis to sleep between mqtt keepalive
@@ -131,23 +131,24 @@ const char * generateID(){
   return id;
 }
 
-void mqtt_connect() {
+bool mqtt_connect() {
+  bool state = false;
   // Loop until we're reconnected or timeout
   while (!client.connected()) {
+    state = true;
     static unsigned long startTime = millis();
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    // if (client.connect(MQTT_CLID, MQTT_NAME, MQTT_PASS)) {
-    if (client.connect(generateID(), MQTT_NAME, MQTT_PASS)) {
+    if (client.connect(MQTT_CLID, MQTT_NAME, MQTT_PASS)) {
       Serial.print("connected in: ");
       Serial.println(millis() - startTime);
       // Once connected, publish an announcement...
       publish(STATUSTOPIC, "helloworld", false);
     } 
-    else if((unsigned long)(millis() - startTime) > MQTTTIMER){   // if we hit attempt number go to sleep
-      Serial.println("MQTT Connection timeout ... going to sleep ...");
-      gotoSleep();
-    }
+    // else if((unsigned long)(millis() - startTime) > MQTTTIMER){   // if we hit attempt number go to sleep
+    //   Serial.println("MQTT Connection timeout ... going to sleep ...");
+    //   gotoSleep();
+    // }
     else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -155,6 +156,7 @@ void mqtt_connect() {
       delay(5000);    // wait a little before trying again
     }
   }
+  return state;
 }
 
 void checkWifiPresence(){               // used to check if wifi network exists before trying to connect
@@ -191,13 +193,13 @@ void wifiConnect(){
   }
   WiFi.begin(mynetworks[netIndex][0], mynetworks[netIndex][1]);               // Connect to wifi (store credentials in private.h)
   while (WiFi.status() != WL_CONNECTED) {     // Keep trying until we connect
-    delay(200);                               // Delay between wifi connection checks
+    delay(500);                               // Delay between wifi connection checks
     Serial.print(".");
     unsigned long thisTime = millis();
-    if((unsigned long)(thisTime - startTime) > WIFITIMER){              // If wifi keeps failing go to sleep
-      Serial.println("Wifi timed out ... going to sleep ...");
-      gotoSleep();
-    }
+    // if((unsigned long)(thisTime - startTime) > WIFITIMER){              // If wifi keeps failing go to sleep
+    //   Serial.println("Wifi timed out ... going to sleep ...");
+    //   gotoSleep();
+    // }
   }
   Serial.println("");
   Serial.print("WiFi connected in (ms): ");
@@ -206,62 +208,35 @@ void wifiConnect(){
 }
 
 void setup() {
-  Serial.begin(115200);
-  // client.loop();                                          // try to keep our connection alive
+  Serial.begin(115200);                                   // try to keep our connection alive
   unsigned long startTime = millis();
-  // uint32_t numLoops = (POSTMINUTES*60*1000)/SLEEPTIME;       // figure out how many loops we need
-  // char charCounter[15];
-  // SPIFFS.begin();
-  // File f = SPIFFS.open("/count.txt", "r");
-  // if(f){
-  //   f.readBytes(charCounter, sizeof(numLoops));
-  //   f.close();
-  //   f = SPIFFS.open("/count.txt", "w");
-  //   uint32_t counter;
-  //   if(charCounter[0]) counter = atoi(charCounter);
-  //   Serial.print("\n\n\nCountdown: ");
-  //   Serial.println(counter); 
-  //   if(counter){                    // if still numbers in counter go back to sleep
-  //     counter --;
-  //     f.print(counter);
-  //     f.close();
-  //     Serial.print("awake millis: ");
-  //     Serial.println(millis());
-  //     delay(10);
-  //     gotoSleep();
-  //   }
-  //   else{
-  //     f.print(numLoops);
-  //     f.close();
-  //   }
-  // }
-  // else{
-  //   SPIFFS.format();
-  //   f = SPIFFS.open("/count.txt", "w");
-  //   if(f) Serial.println("File created");
-  //   f.print(numLoops);
-  //   f.close();
-  //   delay(10);
-  //   gotoSleep();
-  // }
   Serial.println("\nESP8266 in normal mode");   // We booted up properly
   client.setServer(MQTT_SERV, MQTT_PORT);
-  checkWifiPresence();                        // Check if wifi is available before trying to connect
+  // checkWifiPresence();                        // Check if wifi is available before trying to connect
   wifiConnect();
-  delay(5000);         // let wifi settle
+  Serial.print("pinging ");
+  while(!Ping.ping("www.beebotte.com")){ 
+    Serial.print(".");
+    delay(300);
+  }
   mqtt_connect();     // attempt to connect to mqtt server
   // uint8_t value = random(255);                // replace me with sensor read
   // longPublish(value, "feed/feed");                      // send our sensor reading to mqtt
   unsigned long totaltimer = (unsigned long)(millis() - startTime + 200);
   publish(TOTALTIME, totaltimer, Write);
   client.loop();              // push data out
-  delay(200);                 // without delay the radio shuts down before buffer fully sent
-  Serial.println();
-  Serial.print("closing connection time: ");
-  Serial.println(totaltimer);
-  gotoSleep();       // Go To sleep, will start Setup over when wake up
+  // delay(200);                 // without delay the radio shuts down before buffer fully sent
+  // Serial.println();
+  // Serial.print("closing connection time: ");
+  // Serial.println(totaltimer);
+  // gotoSleep();       // Go To sleep, will start Setup over when wake up
 }
 
 void loop() {
-  // nothing will happen here because we will reboot after every sleep
+  static unsigned long failCounter = 0;
+  if(mqtt_connect()) failCounter++;
+  Serial.println(failCounter);
+  publish(STARTUP, failCounter, Write);
+  client.loop();              // push data out
+  delay(10000);
 }
