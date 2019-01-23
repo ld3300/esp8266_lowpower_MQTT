@@ -17,7 +17,7 @@
 const char* mynetworks [][5] = {            // {SSID,Password}
               {"SSID1","PASSWORD1"},
               {"SSID2","PASSWORD2"}};
-const bool staticIP [] = {false, false};    // for each network do we have static IP?
+const bool staticIP [] = {true, false};    // for each network do we have static IP?
 IPAddress ip[] = { IPAddress(192,168,1,51), IPAddress(0,0,0,0)};
 IPAddress gateway[] = { IPAddress(192,168,1,1), IPAddress(0,0,0,0)};
 IPAddress subnet[] = { IPAddress(255,255,255,0), IPAddress(0,0,0,0)};
