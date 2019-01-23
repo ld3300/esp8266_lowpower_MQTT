@@ -2,9 +2,8 @@
 // Libraries
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <PubSubClient.h>
+#include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
-#include <ESP8266Ping.h>
 #include "private.h"        // store wifi and mqtt credetials here. Add private.h to .gitignore
 
 #define SLEEPTIME 600000     // millis to sleep between mqtt keepalive
@@ -13,16 +12,19 @@
 #define MQTTTIMER 47000  //4 //40000 //3     // Maximum time to conn to MQTT
 #define Write true
 
-uint8_t netIndex = 0;       // will point the the available network in our network array in private.h
+uint8_t netIndex = 0;       // will point to the available network in our network array in private.h
 
-#define deb Serial.println("\nhere");
+
+
+const char * headerKeys[] = {"date", "server"};
+const size_t numberOfHeaders = 2;
+
+
+
 
 // Create an ESP8266 WiFiClient class to connect to the MQTT server.
-WiFiClientSecure espclient;
+// WiFiClientSecure espclient;
 // WiFiClient espclient;
-PubSubClient client(espclient);
-const char chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";      // for random ID
-char id[17];
 
 void onMessage(char* topic, byte* payload, unsigned int length) {
   // decode the JSON payload
@@ -69,7 +71,7 @@ void publish(const char* resource, char* data, bool persist){
     sprintf(topic, "%s/%s", MQTT_CHAN, resource);
 
     // Now publish the char buffer to Beebotte
-    client.publish(topic, buffer);
+    // client.publish(topic, buffer);
 }
 void publish(const char* resource, float data, bool persist){
     StaticJsonBuffer<128> jsonOutBuffer;
@@ -90,7 +92,7 @@ void publish(const char* resource, float data, bool persist){
     sprintf(topic, "%s/%s", MQTT_CHAN, resource);
 
     // Now publish the char buffer to Beebotte
-    client.publish(topic, buffer);
+    // client.publish(topic, buffer);
 }
 void publish(const char* resource, unsigned long data, bool persist){
     StaticJsonBuffer<128> jsonOutBuffer;
@@ -111,52 +113,13 @@ void publish(const char* resource, unsigned long data, bool persist){
     sprintf(topic, "%s/%s", MQTT_CHAN, resource);
 
     // Now publish the char buffer to Beebotte
-    client.publish(topic, buffer);
+    // client.publish(topic, buffer);
 }
 
 void gotoSleep(){
   // Sleep 
   Serial.println("ESP8266 in sleep mode\n");
   ESP.deepSleep(SLEEPTIME * 1000);
-}
-
-const char * generateID(){
-  randomSeed(analogRead(0));
-  int i = 0;
-  for(i = 0; i < sizeof(id) - 1; i++) {
-    id[i] = chars[random(sizeof(chars))];
-  }
-  id[sizeof(id) -1] = '\0';
-
-  return id;
-}
-
-bool mqtt_connect() {
-  bool state = false;
-  // Loop until we're reconnected or timeout
-  while (!client.connected()) {
-    state = true;
-    static unsigned long startTime = millis();
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if (client.connect(MQTT_CLID, MQTT_NAME, MQTT_PASS)) {
-      Serial.print("connected in: ");
-      Serial.println(millis() - startTime);
-      // Once connected, publish an announcement...
-      publish(STATUSTOPIC, "helloworld", false);
-    } 
-    // else if((unsigned long)(millis() - startTime) > MQTTTIMER){   // if we hit attempt number go to sleep
-    //   Serial.println("MQTT Connection timeout ... going to sleep ...");
-    //   gotoSleep();
-    // }
-    else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" trying again");
-      delay(5000);    // wait a little before trying again
-    }
-  }
-  return state;
 }
 
 void checkWifiPresence(){               // used to check if wifi network exists before trying to connect
@@ -188,9 +151,9 @@ void checkWifiPresence(){               // used to check if wifi network exists 
 
 void wifiConnect(){
   static unsigned long startTime = millis();
-  if(staticIP[netIndex]){
-    WiFi.config(ip[netIndex], gateway[netIndex], subnet[netIndex], dns);  // Pull IP info from private.h
-  }
+  // if(staticIP[netIndex]){
+  //   WiFi.config(ip[netIndex], gateway[netIndex], subnet[netIndex], dns);  // Pull IP info from private.h
+  // }
   WiFi.begin(mynetworks[netIndex][0], mynetworks[netIndex][1]);               // Connect to wifi (store credentials in private.h)
   while (WiFi.status() != WL_CONNECTED) {     // Keep trying until we connect
     delay(500);                               // Delay between wifi connection checks
@@ -211,21 +174,10 @@ void setup() {
   Serial.begin(115200);                                   // try to keep our connection alive
   unsigned long startTime = millis();
   Serial.println("\nESP8266 in normal mode");   // We booted up properly
-  client.setServer(MQTT_SERV, MQTT_PORT);
   // checkWifiPresence();                        // Check if wifi is available before trying to connect
   wifiConnect();
-  Serial.print("pinging ");
-  while(!Ping.ping("www.beebotte.com")){ 
-    Serial.print(".");
-    delay(300);
-  }
-  mqtt_connect();     // attempt to connect to mqtt server
-  // uint8_t value = random(255);                // replace me with sensor read
-  // longPublish(value, "feed/feed");                      // send our sensor reading to mqtt
-  unsigned long totaltimer = (unsigned long)(millis() - startTime + 200);
+  unsigned long totaltimer = (unsigned long)(millis() - startTime);
   publish(TOTALTIME, totaltimer, Write);
-  client.loop();              // push data out
-  // delay(200);                 // without delay the radio shuts down before buffer fully sent
   // Serial.println();
   // Serial.print("closing connection time: ");
   // Serial.println(totaltimer);
@@ -233,10 +185,30 @@ void setup() {
 }
 
 void loop() {
-  static unsigned long failCounter = 0;
-  if(mqtt_connect()) failCounter++;
-  Serial.println(failCounter);
-  publish(STARTUP, failCounter, Write);
-  client.loop();              // push data out
-  delay(10000);
+  StaticJsonBuffer<128> jsonOutBuffer;
+  JsonObject& root = jsonOutBuffer.createObject();
+  // root["channel"] = MQTT_CHAN;
+  // root["resource"] = STARTUP;
+  root["write"] = true;
+  root["data"] = millis();
+
+  // Now print the JSON into a char buffer
+  char buffer[128];
+  root.printTo(buffer, sizeof(buffer));
+  // Serial.println(buffer);
+
+  HTTPClient http;
+  http.begin("https://webhook.site/cdf62ff1-9229-441a-8c75-309b83865982/", true); //Specify destination for HTTP request
+  http.addHeader("Content-Type", "text/plain");               
+  int httpCode = http.POST("test");
+  String payload = http.getString();
+  Serial.println(payload);
+
+
+
+Serial.print("http result:");
+Serial.println(httpCode);
+http.end();
+
+  delay(20000);
 }
